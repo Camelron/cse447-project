@@ -10,7 +10,10 @@ import torch.nn.functional as F
 
 import numpy as np
 
-PAD_CHAR = ' '
+import pickle
+
+PAD_CHAR = '\1'
+UNK_CHAR = '\0'
 BATCH_SIZE = 128
 HIDDEN_DIM = 256
 N_RNN_LAYERS = 2
@@ -20,15 +23,27 @@ LEARNING_RATE = 1e-3
 
 def apply_vocab(data, char_to_index):
     for itr in range(len(data)):
-        data[itr] = [char_to_index[character] for character in data[itr]]
+        data[itr] = [char_to_index.get(character, char_to_index[UNK_CHAR]) for character in data[itr]]
 
 # set up one-hot encodings
-def get_features(lines, char_to_index, sequence_len):
-    features = np.zeros((BATCH_SIZE, sequence_len, len(char_to_index.items())), dtype=np.float32)
+def get_features(lines, char_to_index, sequence_len, batch_size=BATCH_SIZE):
+    features = np.zeros((batch_size, sequence_len, len(char_to_index.items())), dtype=np.float32)
 
-    for batch_itr in range(BATCH_SIZE):
+    print(f"features shape for epoch: {features.shape}")
+    print(f"batch_size: {batch_size}")
+    print(f"sequence_len: {sequence_len}")
+    for batch_itr in range(batch_size):
         for itr in range(sequence_len):
             features[batch_itr, itr, lines[batch_itr][itr]] = 1
+    return features
+
+# set up one-hot encodings
+def get_features_single(lines, char_to_index, sequence_len):
+    features = np.zeros((1, sequence_len, len(char_to_index.items())), dtype=np.float32)
+
+    for batch_itr in range(1):
+        for itr in range(sequence_len):
+            features[batch_itr, itr, lines[itr]] = 1
     return features
 
 class RNN_Model(nn.Module):
@@ -38,12 +53,12 @@ class RNN_Model(nn.Module):
         self.n_layers = n_layers
 
         # RNN Layer
-        self.rnn = nn.RNN(input_size, hidden_dim, n_layers, batch_first=True)   
+        self.rnn = nn.RNN(input_size, hidden_dim, n_layers, batch_first=True)
         # Fully connected layer
         self.fc = nn.Linear(hidden_dim, output_size)
-    
+
     def forward(self, x):
-        
+
         batch_size = x.size(0)
 
         # Initializing hidden state for first input using method defined below
@@ -51,13 +66,13 @@ class RNN_Model(nn.Module):
 
         # Passing in the input and hidden state into the model and obtaining outputs
         out, hidden = self.rnn(x, hidden)
-        
+
         # Reshaping the outputs such that it can be fit into the fully connected layer
         out = out.contiguous().view(-1, self.hidden_dim)
         out = self.fc(out)
-        
+
         return out, hidden
-    
+
     def init_hidden(self, batch_size):
         # This method generates the first hidden state of zeros which we'll use in the forward pass
         # We'll send the tensor holding the hidden state to the device we specified earlier as well
@@ -75,11 +90,11 @@ class MyModel:
         # your code here
         # this particular model doesn't train
         data = []
-        f = open('data/dialogue_short.txt', "r", encoding='utf-8')
+        f = open('data/dialogueText.txt', "r", encoding='utf-8')
         for line in f:
             data.append(line)
 
-        char_to_index = {PAD_CHAR: 0}
+        char_to_index = {PAD_CHAR: 0, UNK_CHAR: 1}
         longest_len = 0
         chars = set()
 
@@ -97,7 +112,7 @@ class MyModel:
             pad_len = longest_len - len(data[itr])
             data[itr] = (PAD_CHAR * pad_len) + data[itr]
 
-        
+
 
         data_X = [line[:-1] for line in data]
         data_Y = [line[-1] for line in data]
@@ -143,7 +158,7 @@ class MyModel:
                 self.train_batch(optimizer, device, batch_X[itr], batch_Y[itr])
 
         return self.m
-            
+
 
     def train_batch(self, optimizer, device, X, Y):
         optimizer.zero_grad()
@@ -156,23 +171,38 @@ class MyModel:
         print(f"Loss: {loss.item()}")
 
 
-
-    def run_pred(self, data):
+    def run_pred(self, data, char_to_index):
         # your code here
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        index_to_char = {v: k for k, v in char_to_index.items()}
+        apply_vocab(data, char_to_index)
+
         preds = []
-        all_chars = string.ascii_letters
-        for inp in data:
+        for line in data:
             # this model just predicts a random character each time
-            top_guesses = [random.choice(all_chars) for _ in range(3)]
+            line_encoding = get_features_single(line, char_to_index, len(line))
+            line_encoding = torch.from_numpy(line_encoding)
+            line_encoding.to(device)
+
+            out, hidden, = self.m(line_encoding)
+
+            prob = nn.functional.softmax(out[-1], dim=0).data
+            char_ind = torch.max(prob, dim=0)[1].item()
+
+            top3_letters, top3_indices = torch.topk(prob, 3, dim=0)
+            top_guesses = '' + index_to_char[top3_indices.numpy()[0]] + index_to_char[top3_indices.numpy()[1]] + index_to_char[top3_indices.numpy()[2]]
             preds.append(''.join(top_guesses))
         return preds
 
-    def save(self, work_dir, m):
+    def save(self, work_dir, m, char_to_index):
         torch.save(self.m, work_dir + '/trained_model.model')
+        pickle.dump(char_to_index, open('char_to_index.pickle', 'wb'))
 
     @classmethod
     def load(cls, work_dir):
-        return torch.load(work_dir + '/trained_model.model')
+        model = torch.load(work_dir + '/trained_model.model')
+        char_to_index = pickle.load(open('char_to_index.pickle', 'rb'))
+        return model, char_to_index
 
 
 if __name__ == '__main__':
@@ -196,16 +226,16 @@ if __name__ == '__main__':
         print('Training')
         m = model.run_train(X, Y, char_to_index, args.work_dir, longest_len)
         print('Saving model')
-        model.save(args.work_dir, m)
+        model.save(args.work_dir, m, char_to_index)
     elif args.mode == 'test':
         print('Loading model')
-        m = MyModel.load(args.work_dir)
+        m, char_to_index = MyModel.load(args.work_dir)
         print('Loading test data from {}'.format(args.test_data))
         test_data = MyModel.load_test_data(args.test_data)
         print('Making predictions')
         model = MyModel()
         model.m = m
-        pred = model.run_pred(test_data)
+        pred = model.run_pred(test_data, char_to_index)
         print('Writing predictions to {}'.format(args.test_output))
         assert len(pred) == len(test_data), 'Expected {} predictions but got {}'.format(len(test_data), len(pred))
         model.write_pred(pred, args.test_output)
