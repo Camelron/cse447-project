@@ -139,6 +139,8 @@ class MyModel:
                 input_vec = torch.from_numpy(one_hot_matrix)
                 output_vec = torch.Tensor(batch_Y[itr])
                 self.train_batch(optimizer, device, m, batch_X[itr], batch_Y[itr])
+
+        return m
             
 
     def train_batch(self, optimizer, device, m, X, Y):
@@ -164,12 +166,11 @@ class MyModel:
         return preds
 
     def save(self, work_dir, m):
-        torch.save(m.state_dict(), work_dir)
+        torch.save(m.state_dict(), work_dir + '/trained_model.model')
 
     @classmethod
     def load(cls, work_dir):
-        m = RNN_Model(*args, **{})
-        m.load_state_dict(torch.load(work_dir))
+        m = torch.load(work_dir + '/trained_model.model')
         return m
 
 
@@ -192,9 +193,9 @@ if __name__ == '__main__':
         print('Loading training data')
         X, Y, char_to_index, longest_len = MyModel.load_training_data()
         print('Training')
-        model.run_train(X, Y, char_to_index, args.work_dir, longest_len)
+        m = model.run_train(X, Y, char_to_index, args.work_dir, longest_len)
         print('Saving model')
-        model.save(args.work_dir, model)
+        model.save(args.work_dir, m)
     elif args.mode == 'test':
         print('Loading model')
         model = MyModel.load(args.work_dir)
