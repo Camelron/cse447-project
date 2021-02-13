@@ -68,6 +68,8 @@ class MyModel:
     """
     This is a starter model to get you started. Feel free to modify this file.
     """
+    m: RNN_Model
+
     @classmethod
     def load_training_data(cls):
         # your code here
@@ -127,8 +129,8 @@ class MyModel:
         print(f"Cuda check = {cuda_available}")
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        m = RNN_Model(input_size=len(char_to_index), output_size=len(char_to_index), hidden_dim=HIDDEN_DIM, n_layers=N_RNN_LAYERS)
-        optimizer = torch.optim.Adam(m.parameters(), lr=LEARNING_RATE)
+        self.m = RNN_Model(input_size=len(char_to_index), output_size=len(char_to_index), hidden_dim=HIDDEN_DIM, n_layers=N_RNN_LAYERS)
+        optimizer = torch.optim.Adam(self.m.parameters(), lr=LEARNING_RATE)
 
         for epoch in range(1, N_EPOCHS + 1):
             print(f"Epoch: {epoch}")
@@ -138,16 +140,16 @@ class MyModel:
                 one_hot_matrix = get_features(batch_X[itr], char_to_index, longest_len)
                 input_vec = torch.from_numpy(one_hot_matrix)
                 output_vec = torch.Tensor(batch_Y[itr])
-                self.train_batch(optimizer, device, m, batch_X[itr], batch_Y[itr])
+                self.train_batch(optimizer, device, batch_X[itr], batch_Y[itr])
 
-        return m
+        return self.m
             
 
-    def train_batch(self, optimizer, device, m, X, Y):
+    def train_batch(self, optimizer, device, X, Y):
         optimizer.zero_grad()
         X.to(device)
         Y.to(device)
-        output, hidden = m(X)
+        output, hidden = self.m(X)
         loss = F.cross_entropy(output, Y)
         loss.backward()
         optimizer.step()
@@ -166,12 +168,11 @@ class MyModel:
         return preds
 
     def save(self, work_dir, m):
-        torch.save(m.state_dict(), work_dir + '/trained_model.model')
+        torch.save(self.m, work_dir + '/trained_model.model')
 
     @classmethod
     def load(cls, work_dir):
-        m = torch.load(work_dir + '/trained_model.model')
-        return m
+        return torch.load(work_dir + '/trained_model.model')
 
 
 if __name__ == '__main__':
@@ -198,10 +199,12 @@ if __name__ == '__main__':
         model.save(args.work_dir, m)
     elif args.mode == 'test':
         print('Loading model')
-        model = MyModel.load(args.work_dir)
+        m = MyModel.load(args.work_dir)
         print('Loading test data from {}'.format(args.test_data))
         test_data = MyModel.load_test_data(args.test_data)
         print('Making predictions')
+        model = MyModel()
+        model.m = m
         pred = model.run_pred(test_data)
         print('Writing predictions to {}'.format(args.test_output))
         assert len(pred) == len(test_data), 'Expected {} predictions but got {}'.format(len(test_data), len(pred))
