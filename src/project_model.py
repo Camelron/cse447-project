@@ -14,11 +14,11 @@ import pickle
 
 PAD_CHAR = '\1'
 UNK_CHAR = '\0'
-BATCH_SIZE = 9999999999999999999999999999999999999 # batching is broken right now
-HIDDEN_DIM = 256
+BATCH_SIZE = 1000 # batching is broken right now
+HIDDEN_DIM = 128
 N_RNN_LAYERS = 2
 N_EPOCHS = 20
-LEARNING_RATE = 1e-3
+LEARNING_RATE = 1e-2
 
 
 def apply_vocab(data, char_to_index):
@@ -30,24 +30,30 @@ def get_features(lines, char_to_index, sequence_len, batch_size=BATCH_SIZE):
     features = np.zeros((batch_size, sequence_len, len(char_to_index.items())), dtype=np.float32)
     lines = np.array(lines)
 
-    print(f"features shape for epoch: {features.shape}")
-    print(f"batch_size: {batch_size}")
-    print(f"sequence_len: {sequence_len}")
+    # print(f"features shape for epoch: {features.shape}")
+    # print(f"batch_size: {batch_size}")
+    # print(f"sequence_len: {sequence_len}")
     for batch_itr in range(batch_size):
-        for itr in range(sequence_len - 1):
+        for itr in range(sequence_len):
             features[batch_itr, itr, lines[batch_itr][itr]] = 1
 
     return features
 
 # set up one-hot encodings
 def get_features_single(lines, char_to_index, sequence_len):
-    features = np.zeros((1, sequence_len, len(char_to_index.items())), dtype=np.float32)
+    features = np.zeros((len(lines), sequence_len, len(char_to_index.items())), dtype=np.float32)
+    # print('==========')
+    # print(features.shape)
+    # print(lines)
+    # print(len(lines))
 
-    for batch_itr in range(1):
+    for batch_itr in range(len(lines)):
         for itr in range(sequence_len):
             features[batch_itr, itr, lines[itr]] = 1
     return features
 
+# we referenced this basic tutorial when setting up our rnn
+# https://blog.floydhub.com/a-beginners-guide-on-recurrent-neural-networks-with-pytorch/
 class RNN_Model(nn.Module):
     def __init__(self, input_size, output_size, hidden_dim, n_layers):
         super(RNN_Model, self).__init__()
@@ -61,6 +67,7 @@ class RNN_Model(nn.Module):
 
     def forward(self, x):
 
+        print(f"shape {tuple(x.shape)[1]}")
         batch_size = x.size(0)
 
         # Initializing hidden state for first input using method defined below
@@ -79,6 +86,7 @@ class RNN_Model(nn.Module):
         # This method generates the first hidden state of zeros which we'll use in the forward pass
         # We'll send the tensor holding the hidden state to the device we specified earlier as well
         hidden = torch.zeros(self.n_layers, batch_size, self.hidden_dim)
+        # hidden = hidden + (0.1**0.5)*torch.randn(self.n_layers, batch_size, self.hidden_dim)
         return hidden
 
 class MyModel:
@@ -96,6 +104,9 @@ class MyModel:
         for line in f:
             data.append(line)
 
+        print("Run stats:")
+        print(f"N: {len(data)}")
+
         char_to_index = {PAD_CHAR: 0, UNK_CHAR: 1}
         longest_len = 0
         chars = set()
@@ -110,19 +121,29 @@ class MyModel:
                     char_to_index[character] = len(char_to_index.items())
                     chars.add(character)
 
+        
+
         for itr in range(len(data)):
             pad_len = longest_len - len(data[itr])
             data[itr] = (PAD_CHAR * pad_len) + data[itr]
 
+        
+        
+
+
 
 
         data_X = [line[:-1] for line in data]
-        data_Y = [line[-1] for line in data]
+        data_Y = [line[1:] for line in data]
+
+        longest_len = len(data_X[0])
 
         apply_vocab(data_X, char_to_index)
         apply_vocab(data_Y, char_to_index)
 
-
+        print(f"data_X: {len(data_X)}")
+        print(f"data_Y: {len(data_Y)}")
+        print(f"Number of unique characters in dataset (+ UNK, PAD): {len(char_to_index)}")
         return (data_X, data_Y, char_to_index, longest_len)
 
     @classmethod
@@ -148,26 +169,37 @@ class MyModel:
 
         self.m = RNN_Model(input_size=len(char_to_index), output_size=len(char_to_index), hidden_dim=HIDDEN_DIM, n_layers=N_RNN_LAYERS)
         optimizer = torch.optim.Adam(self.m.parameters(), lr=LEARNING_RATE)
+        criterion = nn.CrossEntropyLoss()
 
         for epoch in range(1, N_EPOCHS + 1):
             print(f"Epoch: {epoch}")
-            batch_X = [X[i:i+BATCH_SIZE] for i in range(0, len(X), BATCH_SIZE)]
-            batch_Y = [Y[i:i+BATCH_SIZE] for i in range(0, len(Y), BATCH_SIZE)]
-            for itr in range(len(batch_X) - 1):
-                one_hot_matrix = get_features(batch_X[itr], char_to_index, longest_len)
-                input_vec = torch.from_numpy(one_hot_matrix)
-                output_vec = torch.Tensor(batch_Y[itr])
-                self.train_batch(optimizer, device, input_vec, output_vec)
+            # TODO: fix batching later
+            # batch_X = [X[i:i+BATCH_SIZE] for i in range(0, len(X), BATCH_SIZE)]
+            # batch_Y = [Y[i:i+BATCH_SIZE] for i in range(0, len(Y), BATCH_SIZE)]
+            batch_X = X
+            batch_Y = Y
+            #for itr in range(len(batch_X) - 1):
+            one_hot_matrix = get_features_single(batch_X, char_to_index, longest_len)
+            input_vec = torch.from_numpy(one_hot_matrix)
+            output_vec = torch.Tensor(batch_Y)
+            self.train_batch(optimizer, criterion, device, input_vec, output_vec)
 
         return self.m
 
 
-    def train_batch(self, optimizer, device, X, Y):
+    def train_batch(self, optimizer, criterion, device, X, Y):
         optimizer.zero_grad()
         X.to(device)
         Y.to(device)
         output, hidden = self.m(X)
-        loss = nn.CrossEntropyLoss(output, Y.view(-1).long())
+
+        print('-----------------')
+        print(output.shape)
+        print(X.shape)
+        print(Y.shape)
+        print(Y.view(-1).long().shape)
+        
+        loss = criterion(output, Y.view(-1).long())
         loss.backward()
         optimizer.step()
         print(f"Loss: {loss.item()}")
@@ -198,12 +230,12 @@ class MyModel:
 
     def save(self, work_dir, m, char_to_index):
         torch.save(self.m, work_dir + '/trained_model.model')
-        pickle.dump(char_to_index, open('char_to_index.pickle', 'wb'))
+        pickle.dump(char_to_index, open('./work/char_to_index.pickle', 'wb'))
 
     @classmethod
     def load(cls, work_dir):
         model = torch.load(work_dir + '/trained_model.model')
-        char_to_index = pickle.load(open('char_to_index.pickle', 'rb'))
+        char_to_index = pickle.load(open('./work/char_to_index.pickle', 'rb'))
         return model, char_to_index
 
 
