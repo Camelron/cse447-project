@@ -14,7 +14,7 @@ import pickle
 
 PAD_CHAR = '\1'
 UNK_CHAR = '\0'
-BATCH_SIZE = 128
+BATCH_SIZE = 9999999999999999999999999999999999999 # batching is broken right now
 HIDDEN_DIM = 256
 N_RNN_LAYERS = 2
 N_EPOCHS = 20
@@ -28,13 +28,15 @@ def apply_vocab(data, char_to_index):
 # set up one-hot encodings
 def get_features(lines, char_to_index, sequence_len, batch_size=BATCH_SIZE):
     features = np.zeros((batch_size, sequence_len, len(char_to_index.items())), dtype=np.float32)
+    lines = np.array(lines)
 
     print(f"features shape for epoch: {features.shape}")
     print(f"batch_size: {batch_size}")
     print(f"sequence_len: {sequence_len}")
     for batch_itr in range(batch_size):
-        for itr in range(sequence_len):
+        for itr in range(sequence_len - 1):
             features[batch_itr, itr, lines[batch_itr][itr]] = 1
+
     return features
 
 # set up one-hot encodings
@@ -90,7 +92,7 @@ class MyModel:
         # your code here
         # this particular model doesn't train
         data = []
-        f = open('data/dialogueText.txt', "r", encoding='utf-8')
+        f = open('data/dialogue_med.txt', "r", encoding='utf-8')
         for line in f:
             data.append(line)
 
@@ -135,7 +137,7 @@ class MyModel:
 
     @classmethod
     def write_pred(cls, preds, fname):
-        with open(fname, 'wt') as f:
+        with open(fname, 'wt', encoding='utf-8') as f:
             for p in preds:
                 f.write('{}\n'.format(p))
 
@@ -155,7 +157,7 @@ class MyModel:
                 one_hot_matrix = get_features(batch_X[itr], char_to_index, longest_len)
                 input_vec = torch.from_numpy(one_hot_matrix)
                 output_vec = torch.Tensor(batch_Y[itr])
-                self.train_batch(optimizer, device, batch_X[itr], batch_Y[itr])
+                self.train_batch(optimizer, device, input_vec, output_vec)
 
         return self.m
 
@@ -165,7 +167,7 @@ class MyModel:
         X.to(device)
         Y.to(device)
         output, hidden = self.m(X)
-        loss = F.cross_entropy(output, Y)
+        loss = nn.CrossEntropyLoss(output, Y.view(-1).long())
         loss.backward()
         optimizer.step()
         print(f"Loss: {loss.item()}")
