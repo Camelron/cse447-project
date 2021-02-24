@@ -14,10 +14,10 @@ import pickle
 
 PAD_CHAR = '\1'
 UNK_CHAR = '\0'
-BATCH_SIZE = 1000 # batching is broken right now
+BATCH_SIZE = 32 
 HIDDEN_DIM = 128
 N_RNN_LAYERS = 2
-N_EPOCHS = 20
+N_EPOCHS = 10
 LEARNING_RATE = 1e-2
 
 
@@ -30,6 +30,7 @@ def get_features(lines, char_to_index, sequence_len, batch_size=BATCH_SIZE):
     features = np.zeros((batch_size, sequence_len, len(char_to_index.items())), dtype=np.float32)
     lines = np.array(lines)
 
+    # print(f"lines shape for epoch: {lines.shape}")
     # print(f"features shape for epoch: {features.shape}")
     # print(f"batch_size: {batch_size}")
     # print(f"sequence_len: {sequence_len}")
@@ -104,8 +105,16 @@ class MyModel:
         for line in f:
             data.append(line)
 
-        print("Run stats:")
-        print(f"N: {len(data)}")
+        # cut out excess data so the count of datas can be evenly divided
+        # by the batch number
+        limit = BATCH_SIZE * (len(data) // BATCH_SIZE)
+        org_length = len(data)
+        for _ in range(limit, org_length):
+            data.pop()
+
+
+        # print("Run stats:")
+        # print(f"N: {len(data)}")
 
         char_to_index = {PAD_CHAR: 0, UNK_CHAR: 1}
         longest_len = 0
@@ -125,13 +134,8 @@ class MyModel:
 
         for itr in range(len(data)):
             pad_len = longest_len - len(data[itr])
-            data[itr] = (PAD_CHAR * pad_len) + data[itr]
-
-        
-        
-
-
-
+            # does it matter whether we pad in the front or at the end?
+            data[itr] = data[itr] + (PAD_CHAR * pad_len)
 
         data_X = [line[:-1] for line in data]
         data_Y = [line[1:] for line in data]
@@ -173,16 +177,13 @@ class MyModel:
 
         for epoch in range(1, N_EPOCHS + 1):
             print(f"Epoch: {epoch}")
-            # TODO: fix batching later
-            # batch_X = [X[i:i+BATCH_SIZE] for i in range(0, len(X), BATCH_SIZE)]
-            # batch_Y = [Y[i:i+BATCH_SIZE] for i in range(0, len(Y), BATCH_SIZE)]
-            batch_X = X
-            batch_Y = Y
-            #for itr in range(len(batch_X) - 1):
-            one_hot_matrix = get_features_single(batch_X, char_to_index, longest_len)
-            input_vec = torch.from_numpy(one_hot_matrix)
-            output_vec = torch.Tensor(batch_Y)
-            self.train_batch(optimizer, criterion, device, input_vec, output_vec)
+            batch_X = [X[i:i+BATCH_SIZE] for i in range(0, len(X), BATCH_SIZE)]
+            batch_Y = [Y[i:i+BATCH_SIZE] for i in range(0, len(Y), BATCH_SIZE)]
+            for itr in range(len(batch_X)):
+                one_hot_matrix = get_features(batch_X[itr], char_to_index, longest_len)
+                input_vec = torch.from_numpy(one_hot_matrix)
+                output_vec = torch.Tensor(batch_Y[itr])
+                self.train_batch(optimizer, criterion, device, input_vec, output_vec)
 
         return self.m
 
@@ -193,11 +194,11 @@ class MyModel:
         Y.to(device)
         output, hidden = self.m(X)
 
-        print('-----------------')
-        print(output.shape)
-        print(X.shape)
-        print(Y.shape)
-        print(Y.view(-1).long().shape)
+        # print('-----------------')
+        # print(output.shape)
+        # print(X.shape)
+        # print(Y.shape)
+        # print(Y.view(-1).long().shape)
         
         loss = criterion(output, Y.view(-1).long())
         loss.backward()
@@ -214,6 +215,7 @@ class MyModel:
         preds = []
         for line in data:
             # this model just predicts a random character each time
+            # do we need to pad the data?
             line_encoding = get_features_single(line, char_to_index, len(line))
             line_encoding = torch.from_numpy(line_encoding)
             line_encoding.to(device)
