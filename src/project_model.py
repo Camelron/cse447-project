@@ -215,7 +215,6 @@ class MyModel:
         preds = []
         for line in data:
             # this model just predicts a random character each time
-            # do we need to pad the data?
             line_encoding = get_features_single(line, char_to_index, len(line))
             line_encoding = torch.from_numpy(line_encoding)
             line_encoding.to(device)
