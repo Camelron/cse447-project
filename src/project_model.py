@@ -13,8 +13,8 @@ import numpy as np
 import pickle
 
 PAD_CHAR = '\1'
-UNK_CHAR = '\0'
-BATCH_SIZE = 32 
+UNK_CHAR = '\0' 
+BATCH_SIZE = 512 
 HIDDEN_DIM = 128
 N_RNN_LAYERS = 2
 N_EPOCHS = 10
@@ -101,7 +101,7 @@ class MyModel:
         # your code here
         # this particular model doesn't train
         data = []
-        f = open('data/dialogue_med.txt', "r", encoding='utf-8')
+        f = open('data/dialogue_long.txt', "r", encoding='utf-8')
         for line in f:
             data.append(line)
 
