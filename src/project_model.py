@@ -68,7 +68,7 @@ class RNN_Model(nn.Module):
 
     def forward(self, x):
 
-        print(f"shape {tuple(x.shape)[1]}")
+        # print(f"shape {tuple(x.shape)[1]}")
         batch_size = x.size(0)
 
         # Initializing hidden state for first input using method defined below
@@ -118,9 +118,13 @@ class MyModel:
 
         char_to_index = {PAD_CHAR: 0, UNK_CHAR: 1}
         longest_len = 0
+
+        sum_len = 0
+
         chars = set()
 
         for line in data:
+            sum_len += len(line)
             if len(line) > longest_len:
                 longest_len = len(line)
 
@@ -130,17 +134,21 @@ class MyModel:
                     char_to_index[character] = len(char_to_index.items())
                     chars.add(character)
 
-        
+        longest_len = sum_len // len(data)
 
         for itr in range(len(data)):
-            pad_len = longest_len - len(data[itr])
-            # does it matter whether we pad in the front or at the end?
-            data[itr] = data[itr] + (PAD_CHAR * pad_len)
+            if len(data[itr]) > longest_len:
+                data[itr] = data[itr][:longest_len]
+            else:
+                pad_len = longest_len - len(data[itr])
+                # does it matter whether we pad in the front or at the end?
+                data[itr] = data[itr] + (PAD_CHAR * pad_len)
 
         data_X = [line[:-1] for line in data]
         data_Y = [line[1:] for line in data]
 
-        longest_len = len(data_X[0])
+        for i in range(len(data_X)):
+            assert(len(data_X[i]) == longest_len - 1)
 
         apply_vocab(data_X, char_to_index)
         apply_vocab(data_Y, char_to_index)
@@ -148,7 +156,7 @@ class MyModel:
         print(f"data_X: {len(data_X)}")
         print(f"data_Y: {len(data_Y)}")
         print(f"Number of unique characters in dataset (+ UNK, PAD): {len(char_to_index)}")
-        return (data_X, data_Y, char_to_index, longest_len)
+        return (data_X, data_Y, char_to_index, longest_len - 1)
 
     @classmethod
     def load_test_data(cls, fname):
@@ -199,11 +207,11 @@ class MyModel:
         # print(X.shape)
         # print(Y.shape)
         # print(Y.view(-1).long().shape)
-        
+
         loss = criterion(output, Y.view(-1).long())
         loss.backward()
         optimizer.step()
-        print(f"Loss: {loss.item()}")
+        # print(f"Loss: {loss.item()}")
 
 
     def run_pred(self, data, char_to_index):
@@ -258,6 +266,7 @@ if __name__ == '__main__':
         model = MyModel()
         print('Loading training data')
         X, Y, char_to_index, longest_len = MyModel.load_training_data()
+        print('longest len = ', longest_len)
         print('Training')
         m = model.run_train(X, Y, char_to_index, args.work_dir, longest_len)
         print('Saving model')
