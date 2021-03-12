@@ -90,6 +90,7 @@ class RNN_Model(nn.Module):
         # hidden = hidden + (0.1**0.5)*torch.randn(self.n_layers, batch_size, self.hidden_dim)
         return hidden
 
+
 class MyModel:
     """
     This is a starter model to get you started. Feel free to modify this file.
@@ -101,7 +102,7 @@ class MyModel:
         # your code here
         # this particular model doesn't train
         data = []
-        f = open('data/dialogue_long.txt', "r", encoding='utf-8')
+        f = open('data/corpus.txt', "r", encoding='utf-8')
         for line in f:
             data.append(line)
 
@@ -232,8 +233,20 @@ class MyModel:
             prob = nn.functional.softmax(out[-1], dim=0).data
             char_ind = torch.max(prob, dim=0)[1].item()
 
-            top3_letters, top3_indices = torch.topk(prob, 3, dim=0)
-            top_guesses = '' + index_to_char[top3_indices.numpy()[0]] + index_to_char[top3_indices.numpy()[1]] + index_to_char[top3_indices.numpy()[2]]
+            bad_pred_set = {' ', PAD_CHAR, UNK_CHAR, '\n'}
+            top7_letters, top7_indices = torch.topk(prob, 7, dim=0)
+            top3_letters = []
+            top3_indices = []
+            itr = 0
+            while len(top3_letters) < 3:
+                pred = top7_indices.numpy()[itr]
+                if index_to_char[pred] not in bad_pred_set:
+                    top3_letters.append(index_to_char[pred])
+                    top3_indices.append(pred)
+                itr += 1
+
+
+            top_guesses = '' + top3_letters[0] + top3_letters[1] + top3_letters[2]
             preds.append(''.join(top_guesses))
         return preds
 
